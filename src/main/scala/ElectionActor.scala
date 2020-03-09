@@ -45,13 +45,57 @@ class ElectionActor (val id:Int, val terminaux:List[Terminal]) extends Actor {
                self ! Initiate
           }
 
-          case Initiate => 
+          case Initiate => {
+               status = new Candidate();
+               candSucc = -1;
+               candPred = -1;
+               ALG(nodesAlive, id);
+          }
 
-          case ALG (list, init) => 
+          case ALG (list, init) => {
+               if (status == Passive) {
+                    status = new Dummy();
+                    ALG(list, init);
+               }
+               if(status == Candidate) {
+                    candPred = init;
+                    if(id > init && candSucc == -1) {
+                         status = new Waiting();
+                         AVS(list, init);
+                    } else {
+                         AVSRSP(list, candSucc);
+                         status = new Dummy();
+                    }
+                    if (init == id) status = new Leader();
+               }
+          }
 
-          case AVS (list, j) => 
+          case AVS (list, j) => {
+               if (status == Candidate) {
+                    if (candPred == -1) candSucc = j;
+                    else {
+                         AVSRSP(list, j);
+                         status = new Dummy();
+                    }
+               }
+               if (status == Waiting) candSucc = j;
+          }
 
-          case AVSRSP (list, k) => 
+          case AVSRSP (list, k) => {
+               if (status == Waiting){
+                    if(id == k) status = new Leader();
+                    else {
+                         candPred = k;
+                         if(k<id){
+                              status = new Waiting();
+                              AVS(list, k);
+                         }else {
+                              status = new Dummy();
+                              AVSRSP(list, candSucc);
+                         }
+                    }
+               }
+          }
 
      }
 
