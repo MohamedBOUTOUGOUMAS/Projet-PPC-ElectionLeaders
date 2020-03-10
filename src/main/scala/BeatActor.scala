@@ -36,9 +36,14 @@ class BeatActor (val id:Int) extends Actor {
         }
 
         // Objectif : prevenir tous les autres nodes qu'on est en vie
-        case BeatTick => 
-
-        case LeaderChanged (nodeId) => 
+        case BeatTick => {
+          val scheduler = context.system.scheduler
+          scheduler.scheduleOnce(time milliseconds) {
+            father ! Beat(leader)
+            father ! BeatLeader(leader)
+          }
+        }
+        case LeaderChanged (nodeId) => leader = nodeId;
 
     }
 

@@ -45,17 +45,23 @@ class Node (val id:Int, val terminaux:List[Terminal]) extends Actor {
                displayActor ! Message (content)
           }
 
-          case BeatLeader (nodeId) => 
+          case BeatLeader (nodeId) => allNodes.foreach(node => { node ! IsAliveLeader(nodeId) })
 
-          case Beat (nodeId) => 
+          case Beat (nodeId) => allNodes.foreach(node => { node ! IsAlive(nodeId) })
 
           // Messages venant des autres nodes : pour nous dire qui est encore en vie ou mort
-          case IsAlive (id) => 
+          case IsAlive (id) => {
+               checkerActor ! IsAlive(id);
+               allNodes.foreach(node => { node ! IsAlive(id) })
+          };
 
-          case IsAliveLeader (id) => 
+          case IsAliveLeader (id) => {
+               checkerActor ! IsAliveLeader(id);
+               allNodes.foreach(node => { node ! IsAliveLeader(id) })
+          };
 
           // Message indiquant que le leader a change
-          case LeaderChanged (nodeId) => 
+          case LeaderChanged (nodeId) => beatActor ! LeaderChanged(nodeId);
 
      }
 
