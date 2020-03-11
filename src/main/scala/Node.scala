@@ -2,67 +2,98 @@ package upmc.akka.leader
 
 import akka.actor._
 
-case class Start ()
+case class Start()
 
 sealed trait SyncMessage
-case class Sync (nodes:List[Int]) extends SyncMessage
-case class SyncForOneNode (nodeId:Int, nodes:List[Int]) extends SyncMessage
+
+case class Sync(nodes: List[Int]) extends SyncMessage
+
+case class SyncForOneNode(nodeId: Int, nodes: List[Int]) extends SyncMessage
 
 sealed trait AliveMessage
-case class IsAlive (id:Int) extends AliveMessage
-case class IsAliveLeader (id:Int) extends AliveMessage
 
-class Node (val id:Int, val terminaux:List[Terminal]) extends Actor {
+case class IsAlive(id: Int) extends AliveMessage
 
-     // Les differents acteurs du systeme
-     val electionActor = context.actorOf(Props(new ElectionActor(this.id, terminaux)), name = "electionActor")
-     val checkerActor = context.actorOf(Props(new CheckerActor(this.id, terminaux, electionActor)), name = "checkerActor")
-     val beatActor = context.actorOf(Props(new BeatActor(this.id)), name = "beatActor")
-     val displayActor = context.actorOf(Props[DisplayActor], name = "displayActor")
+case class IsAliveLeader(id: Int) extends AliveMessage
 
-     var allNodes:List[ActorSelection] = List()
+case class SetLeader(id: Int) extends AliveMessage
 
-     def receive = {
+class Node(val id: Int, val terminaux: List[Terminal]) extends Actor {
 
-          // Initialisation
-          case Start => {
-               displayActor ! Message ("Node " + this.id + " is created")
-               checkerActor ! Start
-               beatActor ! Start
+    // Les differents acteurs du systeme
+    val electionActor = context.actorOf(Props(new ElectionActor(this.id, terminaux)), name = "electionActor")
+    val checkerActor = context.actorOf(Props(new CheckerActor(this.id, terminaux, electionActor)), name = "checkerActor")
+    val beatActor = context.actorOf(Props(new BeatActor(this.id)), name = "beatActor")
+    val displayActor = context.actorOf(Props[DisplayActor], name = "displayActor")
 
-               // Initilisation des autres remote, pour communiquer avec eux
-               terminaux.foreach(n => {
-                    if (n.id != id) {
-                         val remote = context.actorSelection("akka.tcp://LeaderSystem" + n.id + "@" + n.ip + ":" + n.port + "/user/Node")
-                         // Mise a jour de la liste des nodes
-                         this.allNodes = this.allNodes:::List(remote)
-                    }
-               })
-          }
+    var allNodes: List[ActorSelection] = List()
 
-          // Envoi de messages (format texte)
-          case Message (content) => {
-               displayActor ! Message (content)
-          }
+    def receive = {
 
-          case BeatLeader (nodeId) => allNodes.foreach(node => { node ! IsAliveLeader(nodeId) })
+        // Initialisation
+        case Start => {
+            displayActor ! Message("Node " + this.id + " is created")
+            checkerActor ! Start
+            beatActor ! Start
 
-          case Beat (nodeId) => allNodes.foreach(node => { node ! IsAlive(nodeId) })
+            // Initilisation des autres remote, pour communiquer avec eux
+            terminaux.foreach(n => {
+                if (n.id != id) {
+                    val remote = context.actorSelection("akka.tcp://LeaderSystem" + n.id + "@" + n.ip + ":" + n.port + "/user/Node")
+                    // Mise a jour de la liste des nodes
+                    this.allNodes = this.allNodes ::: List(remote)
+                }
+            })
+        }
 
-          // Messages venant des autres nodes : pour nous dire qui est encore en vie ou mort
-          case IsAlive (id) => {
-               checkerActor ! IsAlive(id);
-               allNodes.foreach(node => { node ! IsAlive(id) })
-          };
+        // Envoi de messages (format texte)
+        case Message(content) => {
+            val c = content.split(" ")
+            if (c(0).equals("LeaderChanged")) {
+                val leader = c(1).toInt
+                checkerActor ! SetLeader(leader)
+                beatActor ! LeaderChanged(leader)
+                displayActor ! Message(content)
+            }
+            else if (c(0).equals("Beat")) {
+                val nodeId = c(1).toInt
+                //self ! Message("allNodes "+allNodes.size)
+                checkerActor ! IsAlive(nodeId)
+                self ! Beat(nodeId)
+            }
+            else if (c(0).equals("BeatLeader")) {
+                val nodeId = c(1).toInt
+                self ! BeatLeader(nodeId)
+            }
+            else displayActor ! Message(content)
+        }
 
-          case IsAliveLeader (id) => {
-               checkerActor ! IsAliveLeader(id);
-               allNodes.foreach(node => { node ! IsAliveLeader(id) })
-          };
+        case BeatLeader(nodeId) => allNodes.foreach(node => {
+            node ! IsAliveLeader(nodeId)
+        })
 
-          // Message indiquant que le leader a change
-          case LeaderChanged (nodeId) => beatActor ! LeaderChanged(nodeId);
+        case Beat(nodeId) => allNodes.foreach(node => {
+            node ! IsAlive(nodeId)
+        })
 
-     }
+        // Messages venant des autres nodes : pour nous dire qui est encore en vie ou mort
+        case IsAlive(id) => {
+            checkerActor ! IsAlive(id);
+            allNodes.foreach(node => {
+                node ! IsAlive(id)
+            })
+        }
+
+        case IsAliveLeader(id) => {
+            checkerActor ! IsAliveLeader(id)
+            allNodes.foreach(node => {
+                node ! IsAliveLeader(id)
+            })
+        }
+
+        // Message indiquant que le leader a change
+        case LeaderChanged(nodeId) => beatActor ! LeaderChanged(nodeId);
+
+    }
 
 }
