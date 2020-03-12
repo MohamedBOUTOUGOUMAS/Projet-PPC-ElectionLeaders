@@ -30,15 +30,11 @@ class ElectionActor(val id: Int, val terminaux: List[Terminal]) extends Actor {
 
     val father = context.parent
     var nodesAlive: List[Int] = List(id)
-
-    //var candSucc: Int = -1
-    //var candPred: Int = -1
-    //var status: NodeStatus = new Passive
     var status = scala.collection.mutable.Map[Int, NodeStatus]()
     var candPred = scala.collection.mutable.Map[Int, Int]()
     var candSucc = scala.collection.mutable.Map[Int, Int]()
 
-    def receive = {
+    def receive: PartialFunction[Any, Unit] = {
 
         // Initialisation
         case Start => {
@@ -52,26 +48,29 @@ class ElectionActor(val id: Int, val terminaux: List[Terminal]) extends Actor {
             else {
                 this.nodesAlive = list
             }
-            nodesAlive.foreach(n => {
-                status += (n -> new Passive)
-                candSucc += (n -> -1)
-                candPred += (n -> -1)
-            })
             self ! Initiate
         }
 
         case Initiate => {
-            father ! Message("Election Start !")
-            status(id) = new Candidate
-            val nei = (nodesAlive.indexOf(id)+1)%nodesAlive.size
-            self ! ALG(id, nodesAlive(nei))
+            father ! Message("Election start !")
+            if (nodesAlive.size > 0){
+                nodesAlive = nodesAlive.sorted
+                nodesAlive.foreach(n => {
+                    status += (n -> new Passive)
+                    candSucc += (n -> -1)
+                    candPred += (n -> -1)
+                })
+                status(nodesAlive(0)) = new Candidate
+                val nei = 1 % nodesAlive.size
+                self ! ALG(nodesAlive(nei), nodesAlive(0))
+            }
         }
 
         case ALG(i, init) => {
             if (status(i).isInstanceOf[Passive]) {
                 status(i) = new Dummy
-                val neigh = (nodesAlive.indexOf(init) + 1) % nodesAlive.size
-                self ! ALG(init, nodesAlive(neigh))
+                val neigh = (nodesAlive.indexOf(i) + 1) % nodesAlive.size
+                self ! ALG(nodesAlive(neigh), init)
             }
             if (status(i).isInstanceOf[Candidate]) {
                 candPred(i) = init
@@ -92,7 +91,6 @@ class ElectionActor(val id: Int, val terminaux: List[Terminal]) extends Actor {
         }
 
         case AVS(i, j) => {
-
             if (status(i).isInstanceOf[Candidate]) {
                 if (candPred(i) == -1) candSucc(i) = j
                 else {

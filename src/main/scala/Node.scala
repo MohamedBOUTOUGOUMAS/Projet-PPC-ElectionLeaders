@@ -16,8 +16,6 @@ case class IsAlive(id: Int) extends AliveMessage
 
 case class IsAliveLeader(id: Int) extends AliveMessage
 
-case class SetLeader(id: Int) extends AliveMessage
-
 class Node(val id: Int, val terminaux: List[Terminal]) extends Actor {
 
     // Les differents acteurs du systeme
@@ -51,18 +49,18 @@ class Node(val id: Int, val terminaux: List[Terminal]) extends Actor {
             val c = content.split(" ")
             if (c(0).equals("LeaderChanged")) {
                 val leader = c(1).toInt
-                checkerActor ! SetLeader(leader)
+                checkerActor ! LeaderChanged(leader)
                 beatActor ! LeaderChanged(leader)
-                displayActor ! Message(content)
+                displayActor ! Message("The Leader is "+leader)
             }
             else if (c(0).equals("Beat")) {
                 val nodeId = c(1).toInt
-                //self ! Message("allNodes "+allNodes.size)
                 checkerActor ! IsAlive(nodeId)
                 self ! Beat(nodeId)
             }
             else if (c(0).equals("BeatLeader")) {
                 val nodeId = c(1).toInt
+                checkerActor ! IsAliveLeader(nodeId)
                 self ! BeatLeader(nodeId)
             }
             else displayActor ! Message(content)
@@ -79,16 +77,10 @@ class Node(val id: Int, val terminaux: List[Terminal]) extends Actor {
         // Messages venant des autres nodes : pour nous dire qui est encore en vie ou mort
         case IsAlive(id) => {
             checkerActor ! IsAlive(id);
-            allNodes.foreach(node => {
-                node ! IsAlive(id)
-            })
         }
 
         case IsAliveLeader(id) => {
             checkerActor ! IsAliveLeader(id)
-            allNodes.foreach(node => {
-                node ! IsAliveLeader(id)
-            })
         }
 
         // Message indiquant que le leader a change

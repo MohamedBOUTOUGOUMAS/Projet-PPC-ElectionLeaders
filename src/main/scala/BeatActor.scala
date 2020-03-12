@@ -17,7 +17,7 @@ case class LeaderChanged(nodeId: Int)
 
 class BeatActor(val id: Int) extends Actor {
 
-    val time: Int = 50
+    val time: Int = 500
     val father = context.parent
     var leader: Int = 0 // On estime que le premier Leader est 0
 
@@ -36,7 +36,7 @@ class BeatActor(val id: Int) extends Actor {
             val scheduler = context.system.scheduler
             scheduler.schedule(0 milliseconds, time milliseconds) {
                 father ! Message("Beat " + id)
-                father ! Message("BeatLeader " + leader)
+                if (leader == id) father ! Message("BeatLeader " + leader)
             }
         }
 
