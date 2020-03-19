@@ -18,11 +18,11 @@ abstract class LeaderAlgoMessage
 
 case class Initiate() extends LeaderAlgoMessage
 
-case class ALG(i: Int, j: Int) extends LeaderAlgoMessage
+case class ALG(list : List[Int], init: Int) extends LeaderAlgoMessage
 
-case class AVS(i: Int, j: Int) extends LeaderAlgoMessage
+case class AVS(list: List[Int], j: Int) extends LeaderAlgoMessage
 
-case class AVSRSP(i: Int, j: Int) extends LeaderAlgoMessage
+case class AVSRSP(list: List[Int], k: Int) extends LeaderAlgoMessage
 
 case class StartWithNodeList(list: List[Int])
 
@@ -30,9 +30,12 @@ class ElectionActor(val id: Int, val terminaux: List[Terminal]) extends Actor {
 
     val father = context.parent
     var nodesAlive: List[Int] = List(id)
-    var status = scala.collection.mutable.Map[Int, NodeStatus]() // Le status de chaque node
-    var candPred = scala.collection.mutable.Map[Int, Int]() // candidat precedent de chaque node
-    var candSucc = scala.collection.mutable.Map[Int, Int]()
+
+    var status: NodeStatus = new Passive
+    var candPred: Int = -1
+    var candSucc: Int = -1
+    var electionActorNeigh: ActorSelection = null
+
 
     def receive: PartialFunction[Any, Unit] = {
 
@@ -48,86 +51,94 @@ class ElectionActor(val id: Int, val terminaux: List[Terminal]) extends Actor {
             else {
                 this.nodesAlive = list
             }
+            status = new Candidate
             self ! Initiate
         }
 
         case Initiate => {
-            /*
-            * Nous mettons le status du premier de la liste à candidat.
-            * Le voisin dans l'anneau c'est le suivant dans la liste des noeuds vivants
-            */
             if (nodesAlive.size > 0){
                 father ! Message("Election start !")
-                /*
-                 * Nous trions la liste des vivants afin d'avoir le même noeud candidat
-                 * et se synchroniser avec les autres nodes qui font l'élection
-                 */
-                nodesAlive.foreach(n => {
-                    status += (n -> new Passive)
-                    candSucc += (n -> -1)
-                    candPred += (n -> -1)
-                })
-                status(nodesAlive(0)) = new Candidate
                 val nei = 1 % nodesAlive.size
-                self ! ALG(nodesAlive(nei), nodesAlive(0))
+                terminaux.foreach(n => {
+                    if (n.id == nodesAlive(nei)) {
+                        electionActorNeigh = context.actorSelection("akka.tcp://LeaderSystem" + n.id + "@" + n.ip + ":" + n.port + "/user/Node/electionActor")
+                    }
+                })
+                electionActorNeigh ! ALG(nodesAlive, nodesAlive(0))
             }
         }
 
-        case ALG(i, init) => {
-            if (status(i).isInstanceOf[Passive]) {
-                status(i) = new Dummy
-                val neigh = (nodesAlive.indexOf(i) + 1) % nodesAlive.size
-                self ! ALG(nodesAlive(neigh), init)
+        case ALG(list, init) => {
+            if (status.isInstanceOf[Passive]) {
+                status = new Dummy
+                val neigh = (list.indexOf(id) + 1) % list.size
+                terminaux.foreach(n => {
+                    if (n.id == list(neigh)) {
+                        electionActorNeigh = context.actorSelection("akka.tcp://LeaderSystem" + n.id + "@" + n.ip + ":" + n.port + "/user/Node/electionActor")
+                    }
+                })
+                electionActorNeigh ! ALG(list, init)
             }
-            if (status(i).isInstanceOf[Candidate]) {
-                candPred(i) = init
-                if (i > init) {
-                    if (candSucc(i) == -1) {
-                        status(i) = new Waiting
-                        self ! AVS(i, init)
+            if (status.isInstanceOf[Candidate]) {
+                candPred = init
+                if (id > init) {
+                    if (candSucc == -1) {
+                        status = new Waiting
+                        self ! AVS(list, init)
                     } else {
-                        self ! AVSRSP(candPred(i), candSucc(i))
-                        status(i) = new Dummy
+                        terminaux.foreach(n => {
+                            if (n.id == init) {
+                                electionActorNeigh = context.actorSelection("akka.tcp://LeaderSystem" + n.id + "@" + n.ip + ":" + n.port + "/user/Node/electionActor")
+                            }
+                        })
+                        electionActorNeigh ! AVSRSP(list, candSucc)
+                        status = new Dummy
                     }
                 }
-                if (init == i) {
-                    status(i) = new Leader
-                    /*
-                     * Une fois que nous avons un leader on propage un message au père,
-                     * il interprète le message puis il propage le changement du leader avec le checkerActor et le beatActor
-                    */
-                    father ! Message("LeaderChanged " + i)
+                if (init == id) {
+                    status = new Leader
+                    father ! Message("LeaderChanged " + id)
                 }
             }
         }
 
-        case AVS(i, j) => {
-            if (status(i).isInstanceOf[Candidate]) {
-                if (candPred(i) == -1) candSucc(i) = j
+        case AVS(list, j) => {
+            if (status.isInstanceOf[Candidate]) {
+                if (candPred == -1) candSucc = j
                 else {
-                    self ! AVSRSP(candPred(i), j)
-                    status(i) = new Dummy
+                    terminaux.foreach(n => {
+                        if (n.id == candPred) {
+                            electionActorNeigh = context.actorSelection("akka.tcp://LeaderSystem" + n.id + "@" + n.ip + ":" + n.port + "/user/Node/electionActor")
+                        }
+                    })
+                    electionActorNeigh ! AVSRSP(list, j)
+                    status = new Dummy
                 }
             }
-            if (status(i).isInstanceOf[Waiting]) candSucc(i) = j
+            if (status.isInstanceOf[Waiting]) candSucc = j
         }
 
-        case AVSRSP(i, k) => {
-            if (status(i).isInstanceOf[Waiting]) {
-                if (i == k) {
-                    status(i) = new Leader
-                    father ! Message("LeaderChanged " + i)
+        case AVSRSP(list, k) => {
+            if (status.isInstanceOf[Waiting]) {
+                if (id == k) {
+                    status = new Leader
+                    father ! Message("LeaderChanged " + id)
                 }
                 else {
-                    candPred(i) = k
-                    if(candSucc(i) == -1){
-                        if (k < i) {
-                            status(i) = new Waiting
-                            self ! AVS(i, k)
+                    candPred = k
+                    if(candSucc == -1){
+                        if (k < id) {
+                            status = new Waiting
+                            self ! AVS(list, k)
                         }
                     } else {
-                        status(i) = new Dummy
-                        self ! AVSRSP(k, candSucc(i))
+                        status = new Dummy
+                        terminaux.foreach(n => {
+                            if (n.id == k) {
+                                electionActorNeigh = context.actorSelection("akka.tcp://LeaderSystem" + n.id + "@" + n.ip + ":" + n.port + "/user/Node/electionActor")
+                            }
+                        })
+                        electionActorNeigh ! AVSRSP(list, candSucc)
                     }
                 }
             }

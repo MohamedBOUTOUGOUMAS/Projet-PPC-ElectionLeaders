@@ -36,7 +36,6 @@ class CheckerActor(val id: Int, val terminaux: List[Terminal], electionActor: Ac
             if (!nodesAlive.contains(nodeId)) {
                 val now = new Date().getTime
                 nodesAlive = nodeId :: nodesAlive
-                father ! Message("Node "+nodeId+" connected")
                 father ! Message("Nodes a live "+nodesAlive)
                 datesForChecking += (nodeId -> new Date(now + time))
             }
@@ -49,7 +48,6 @@ class CheckerActor(val id: Int, val terminaux: List[Terminal], electionActor: Ac
         }
 
         case IsAliveLeader(nodeId) => {
-            //father ! Message("IsAliveLeader "+leader)
             self ! IsAlive(nodeId)
         }
 
