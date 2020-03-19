@@ -45,13 +45,12 @@ class CheckerActor(val id: Int, val terminaux: List[Terminal], electionActor: Ac
                 val newDate = new Date(now + time)
                 datesForChecking(nodeId) = newDate
             }
+            nodesAlive = nodesAlive.sorted
         }
 
         case IsAliveLeader(nodeId) => {
             //father ! Message("IsAliveLeader "+leader)
-            if(nodeId == leader){
-                self ! IsAlive(nodeId)
-            }
+            self ! IsAlive(nodeId)
         }
 
         case LeaderChanged(nodeId) => leader = nodeId
@@ -59,31 +58,32 @@ class CheckerActor(val id: Int, val terminaux: List[Terminal], electionActor: Ac
         // Objectif : lancer l'election si le leader est mort
 
         case CheckerTick => {
+            var leadTmp = leader
             val scheduler = context.system.scheduler
             scheduler.schedule(time milliseconds, time milliseconds) {
-                //father ! Message("----------")
+                if (leader != leadTmp) {
+                    father ! Message("The Leader is "+leader)
+                    leadTmp = leader
+                }
                 var deadIndexes: List[Int] = List()
                 val now = new Date()
                 for((nodeId, date) <- datesForChecking) {
-                    //father ! Message("node: "+nodeId+" expire: "+ date.getTime + ", now " + now.getTime)
                     if (date.before(now)) {
                         deadIndexes = nodeId :: deadIndexes
                     }
                 }
-                //father ! Message("deadindex "+deadIndexes)
                 deadIndexes.foreach(i => {
-                    father ! Message("Node "+i+" disconnected")
+                    if(i != leader) father ! Message("Node "+i+" disconnected")
+                    else father ! Message("Leader "+i+" disconnected")
                     nodesAlive = nodesAlive diff List(i)
                     datesForChecking = datesForChecking.-(i)
                 })
-                if (oldNbAlive != nodesAlive.size) {
-                    father ! Message("Nodes a live "+nodesAlive)
-                    oldNbAlive = nodesAlive.size
+
+                val leadersNeigh = nodesAlive(0)
+                if(deadIndexes.contains(leader) && id == leadersNeigh) {
                     electionActor ! StartWithNodeList(nodesAlive)
                 }
             }
         }
     }
-
-
 }

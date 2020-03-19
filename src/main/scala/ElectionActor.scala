@@ -30,8 +30,8 @@ class ElectionActor(val id: Int, val terminaux: List[Terminal]) extends Actor {
 
     val father = context.parent
     var nodesAlive: List[Int] = List(id)
-    var status = scala.collection.mutable.Map[Int, NodeStatus]()
-    var candPred = scala.collection.mutable.Map[Int, Int]()
+    var status = scala.collection.mutable.Map[Int, NodeStatus]() // Le status de chaque node
+    var candPred = scala.collection.mutable.Map[Int, Int]() // candidat precedent de chaque node
     var candSucc = scala.collection.mutable.Map[Int, Int]()
 
     def receive: PartialFunction[Any, Unit] = {
@@ -52,9 +52,16 @@ class ElectionActor(val id: Int, val terminaux: List[Terminal]) extends Actor {
         }
 
         case Initiate => {
-            father ! Message("Election start !")
+            /*
+            * Nous mettons le status du premier de la liste à candidat.
+            * Le voisin dans l'anneau c'est le suivant dans la liste des noeuds vivants
+            */
             if (nodesAlive.size > 0){
-                nodesAlive = nodesAlive.sorted
+                father ! Message("Election start !")
+                /*
+                 * Nous trions la liste des vivants afin d'avoir le même noeud candidat
+                 * et se synchroniser avec les autres nodes qui font l'élection
+                 */
                 nodesAlive.foreach(n => {
                     status += (n -> new Passive)
                     candSucc += (n -> -1)
@@ -85,6 +92,10 @@ class ElectionActor(val id: Int, val terminaux: List[Terminal]) extends Actor {
                 }
                 if (init == i) {
                     status(i) = new Leader
+                    /*
+                     * Une fois que nous avons un leader on propage un message au père,
+                     * il interprète le message puis il propage le changement du leader avec le checkerActor et le beatActor
+                    */
                     father ! Message("LeaderChanged " + i)
                 }
             }
